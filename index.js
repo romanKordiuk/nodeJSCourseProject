@@ -16,7 +16,8 @@ const userSchema = new Schema({
 });
 
 const exerciseSchema = new Schema({
-  "username": String,
+  "userId": String,
+  "exerciseId": String,
   "date": Date,
   "duration": Number,
   "description": String
@@ -64,10 +65,12 @@ app.post('/api/users', (req, res) => {
           })
         });
       } else {
-        UserInfo.find({}).then(function (users) {
-          res.send(users);
+        res.writeHead(404, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
         });
-        // res.send("Username already Exists");
+
+        res.end("Username already Exists", err);
       }
     }
   });
@@ -75,27 +78,21 @@ app.post('/api/users', (req, res) => {
 
   // #2
 app.post('/api/users/:_id/exercises', (req, res) => {
-  let idJson = {'id': req.params._id};
-  let checkedDate = new Date(req.body.date);
-  let idToCheck = idJson.id;
+  let date = new Date(req.body.date);
+  let id = req.params._id;
 
-  let noDateHandler = () => {
-    if (checkedDate instanceof Date && !isNaN(checkedDate)) {
-      return checkedDate;
-    } else checkedDate = new Date();
-  }
+  date = date instanceof Date && !isNaN(date) ? date : new Date();
 
-
-  UserInfo.findById(idToCheck, (err, userData) => {
-    noDateHandler();
+  UserInfo.findById(id, (err, userData) => {
 
     if (err) console.log("error with id =>", err);
     else {
       const test = new ExerciseInfo({
-        "username": userData.username,
+        "userId": id,
+        "exerciseId": Math.random().toString(16).slice(2),
         "description": req.body.description,
         "duration": req.body.duration,
-        "date": checkedDate.toDateString()
+        "date": date.toDateString()
       });
 
       test.save((error, data) => {
@@ -104,10 +101,10 @@ app.post('/api/users/:_id/exercises', (req, res) => {
         } else {
           console.log('saved exercise successfully');
           res.json({
-            "_id": idToCheck,
-            "username": data.username,
-            "description": data.description,
+            "userId": id,
+            "exerciseId": data.exerciseId,
             "duration": data.duration,
+            "description": data.description,
             "date": data.date
           });
         }
@@ -121,14 +118,13 @@ app.post('/api/users/:_id/exercises', (req, res) => {
  // #3
 app.get('/api/users/:_id/logs', (req, res) => {
   const {from, to, limit} = req.query;
-  let idJson = {"id": req.params._id};
-  let idToCheck = idJson.id;
+  const id = req.params._id;
 
   // Check ID
 
-  UserInfo.findById(idToCheck, (err, data) => {
-    var query = {
-      username: data.username,
+  UserInfo.findById(id, (err, data) => {
+    const query = {
+      userId: id,
     };
 
     if (from !== undefined && to === undefined) {
@@ -156,9 +152,9 @@ app.get('/api/users/:_id/logs', (req, res) => {
         if (error) {
           console.log("error with query=> ", error);
         } else {
-          let documents = exerciseData;
-          loggedArray = documents.map(item => {
+          loggedArray = exerciseData.map(item => {
             return {
+              id: item.exerciseId,
               description: item.description,
               duration: item.duration,
               date: item.date.toDateString()
@@ -166,19 +162,29 @@ app.get('/api/users/:_id/logs', (req, res) => {
           });
 
           const test = new LogInfo({
-            username: data.username,
+            userId: id,
             count: loggedArray.length,
             log: loggedArray
           });
 
           test.save((saveErr, saveData) => {
-            if (saveErr) console.log("error saving exercise=> ", saveErr);
+            if (saveErr) {
+              res.statusCode = 404;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({"error saving exercise": saveErr}));
+            }
             else {
               console.log("saved exercise successfully");
+
+              res.setHeader("Content-Type", "application/json");
+              res.setHeader("Cache-Control", "no-cache");
+              res.statusCode = 200;
+
+
               res.json({
-                "_id": idToCheck,
+                "userId": id,
                 "username": data.username,
-                "count": data.count,
+                "count": loggedArray.length,
                 "log": loggedArray
               })
             }
@@ -192,8 +198,16 @@ app.get('/api/users/:_id/logs', (req, res) => {
   // #4
 app.get('/api/users', (req, res) => {
   UserInfo.find({}, (err, data) => {
-    if (err) res.send("No Users");
-    else res.json(data);
+    if (err || data.length === 0) {
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(err));
+    }
+    else {
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(data));
+    }
   });
 });
 
